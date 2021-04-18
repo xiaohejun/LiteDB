@@ -11,7 +11,9 @@ typedef enum {
 } MetaCommandResult;
 
 typedef enum { 
-    PREPARE_SUCCESS, 
+    PREPARE_SUCCESS,
+    PREPARE_NEGATIVE_ID,
+    PREPARE_STRING_TOO_LONG,
     PREPARE_SYNTAX_ERROR,
     PREPARE_UNRECOGNIZED_STATEMENT 
 } PrepareResult;
@@ -26,12 +28,12 @@ typedef enum {
     STATEMENT_SELECT 
 } StatementType;
 
-#define COLUMN_USERNAME_SIZE 32
+#define COLUMN_USERNAME_SIZE 31
 #define COLUMN_EMAIL_SIZE 255
 typedef struct {
     uint32_t id;
-    char username[COLUMN_USERNAME_SIZE];
-    char email[COLUMN_EMAIL_SIZE];
+    char username[COLUMN_USERNAME_SIZE + 1];
+    char email[COLUMN_EMAIL_SIZE + 1];
 } Row;
 
 typedef struct {
@@ -136,18 +138,43 @@ MetaCommandResult DoMetaCommand(InputBuffer *input, Table *table)
     return META_COMMAND_UNRECOGNIZED_COMMAND;
 }
 
+PrepareResult PrepareInsert(InputBuffer *input, Statement *statement)
+{
+    statement->type = STATEMENT_INSERT;
+
+    char *keyword = strtok(input->buffer, " ");
+    char *idString = strtok(NULL, " ");
+    char *username = strtok(NULL, " ");
+    char *email = strtok(NULL, " ");
+
+    if (idString == NULL || username == NULL || email == NULL) {
+        return PREPARE_SYNTAX_ERROR;
+    }
+
+    int id = atoi(idString);
+    if (id < 0) {
+        return PREPARE_NEGATIVE_ID;
+    }
+
+    if (strlen(username) > COLUMN_USERNAME_SIZE) {
+        return PREPARE_STRING_TOO_LONG;
+    }
+
+    if (strlen(email) > COLUMN_EMAIL_SIZE) {
+        return PREPARE_STRING_TOO_LONG;
+    }
+
+    statement->rowToInsert.id = id;
+    strcpy(statement->rowToInsert.username, username);
+    strcpy(statement->rowToInsert.email, email);
+
+    return PREPARE_SUCCESS;
+}
+
 PrepareResult PrepareStatement(InputBuffer *input, Statement *statement)
 {
     if (strncmp(input->buffer, "insert", strlen("insert")) == 0) {
-        statement->type = STATEMENT_INSERT;
-        int argsAssign = sscanf(input->buffer, "insert %u %s %s", 
-            &statement->rowToInsert.id,
-            statement->rowToInsert.username, 
-            statement->rowToInsert.email);
-        if (argsAssign < 3) {
-            return PREPARE_SYNTAX_ERROR;
-        }
-        return PREPARE_SUCCESS;
+        return PrepareInsert(input, statement);
     }
 
     if (strncmp(input->buffer, "select", strlen("select")) == 0) {
@@ -250,9 +277,15 @@ int main()
         switch (PrepareStatement(input, &statement)) {
             case PREPARE_SUCCESS:
                 break;
+            case PREPARE_NEGATIVE_ID:
+                printf("ID must be positive.\n");
+                continue;
             case PREPARE_SYNTAX_ERROR:
                 printf("Syntax error. Could not parse statement.\n");
             	continue;
+            case PREPARE_STRING_TOO_LONG:
+                printf("String is too long.\n");
+                continue;
             case PREPARE_UNRECOGNIZED_STATEMENT:
                 printf("Unrecognized command '%s'\n", input->buffer);
                 continue;
