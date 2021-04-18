@@ -58,9 +58,14 @@ typedef struct {
 InputBuffer* NewInputBuffer()
 {
     InputBuffer *input = malloc(sizeof(sizeof(InputBuffer)));
+    
     input->buffer = NULL;
-    input->buffLen = 0;
+    input->buffLen = BUFF_MAX_LEN;
     input->inputLen = 0;
+
+    input->buffer = malloc(sizeof(char) * input->buffLen);
+    memset(input->buffer, 0, sizeof(char) * input->buffLen);
+
     return input;
 }
 
@@ -153,14 +158,33 @@ PrepareResult PrepareStatement(InputBuffer *input, Statement *statement)
     return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
+ssize_t GetLine(char *buf, size_t bufLen, FILE *file)
+{
+    if (buf == NULL || bufLen == 0) {
+        return -1;
+    }
+    ssize_t idx = 0;
+    int c = EOF;
+    while ((c = getc(file)) != EOF) {
+        if (idx >= (ssize_t)(bufLen - 1)) { // 预留'\0'
+            return -1;
+        }
+        buf[idx++] = c;
+        if (c == '\n') {
+            break;
+        }
+    }
+    buf[idx] = '\0';
+    return idx;
+}
+
 void ReadInput(InputBuffer *input)
 {
-    ssize_t readBytes = getline(&(input->buffer), &(input->buffLen), stdin);
+    ssize_t readBytes = GetLine(input->buffer, input->buffLen, stdin);
     if (readBytes <= 0) {
         printf("Error reading input\n");
         exit(EXIT_FAILURE);
     }
-    
     // 忽略结尾的行'\n'字符
     input->inputLen = readBytes - 1;
     input->buffer[readBytes - 1] = '\0';

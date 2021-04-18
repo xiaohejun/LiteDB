@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#define BUFF_MAX_LEN 1024
+
 #define ARR_SIZE(arr, type) (sizeof(arr) / sizeof(type))
 
 #define ATTR(type, attr) (((type *)0)->attr)
