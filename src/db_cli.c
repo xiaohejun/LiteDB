@@ -62,6 +62,12 @@ typedef struct {
 } Table;
 
 typedef struct {
+    Table *table;
+    uint32_t rowNum;
+    bool isEndOfTable;
+} Cursor;
+
+typedef struct {
     char *buffer;
     size_t buffLen;
     ssize_t inputLen;
@@ -133,13 +139,52 @@ void *GetPage(Pager *pager, uint32_t pageNum)
     return page;
 }
 
-void* RowSlot(Table *table, uint32_t rowNum)
+Cursor* CreateCursor(Table *table)
 {
-    uint32_t pageNum = rowNum / ROWS_PER_PAGE;
-    void *page = GetPage(table->pager, pageNum);
-    uint32_t rowOffset = rowNum % ROWS_PER_PAGE;
-    uint32_t byteOffset = rowOffset * sizeof(Row);
+    Cursor *cursor = malloc(sizeof(Cursor));
+    cursor->table = table;
+    cursor->rowNum = 0;
+    cursor->isEndOfTable = false;
+    return cursor;
+}
+
+void FreeCursor(Cursor **cursor)
+{
+    free(*cursor);
+    *cursor = NULL;
+}
+
+Cursor* CreateTableStartCursor(Table *table)
+{
+    Cursor *cursor = CreateCursor(table);
+    cursor->rowNum = 0;
+    cursor->isEndOfTable = (table->rowNums == 0);
+    return cursor;
+}
+
+Cursor* CreateTableEndCursor(Table *table)
+{
+    Cursor *cursor = CreateCursor(table);
+    cursor->rowNum = table->rowNums;
+    cursor->isEndOfTable = true;
+    return cursor;
+}
+
+void* GetCursorValue(Cursor *cursor)
+{
+    uint32_t pageNum = cursor->rowNum / ROWS_PER_PAGE;
+    void *page = GetPage(cursor->table->pager, pageNum);
+    uint32_t rowOffset = cursor->rowNum % ROWS_PER_PAGE;
+    uint32_t byteOffset = rowOffset * ROW_SIZE;
     return page + byteOffset;
+}
+
+void CursorAdvance(Cursor *cursor)
+{
+    cursor->rowNum++;
+    if (cursor->rowNum >= cursor->table->rowNums) {
+        cursor->isEndOfTable = true;
+    }
 }
 
 Pager* OpenPager(const char* fileName)
@@ -335,18 +380,22 @@ ExecuteResult ExecuteInsert(Statement *statement, Table *table)
         return EXECUTE_TABLE_FULL;
     }
     Row *rowToInsert = &(statement->rowToInsert);
-    SerializeRow(rowToInsert, RowSlot(table, table->rowNums));
+    Cursor *cursor = CreateTableEndCursor(table);
+    SerializeRow(rowToInsert, GetCursorValue(cursor));
     table->rowNums += 1;
     return EXECUTE_SUCCESS;
 }
 
-ExecuteResult ExecuteSelect(Statement *statement, Table *table)
+ExecuteResult ExecuteSelect(Table *table)
 {
     Row row;
-    for (uint32_t i = 0; i < table->rowNums; ++i) {
-        DeserializeRow(RowSlot(table, i), &row);
+    Cursor *cursor = CreateTableStartCursor(table);
+    while (!cursor->isEndOfTable) {
+        DeserializeRow(GetCursorValue(cursor), &row);
         PrintRow(&row);
+        CursorAdvance(cursor);
     }
+    FreeCursor(&cursor);
     return EXECUTE_SUCCESS;
 }
 
@@ -356,7 +405,7 @@ ExecuteResult ExecuteStatement(Statement *statement, Table *table)
         case STATEMENT_INSERT:
             return ExecuteInsert(statement, table);
         case STATEMENT_SELECT:
-            return ExecuteSelect(statement, table);
+            return ExecuteSelect(table);
         default:
             break;
     }
