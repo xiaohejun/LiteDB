@@ -379,10 +379,13 @@ ExecuteResult ExecuteInsert(Statement *statement, Table *table)
     if (table->rowNums >= TABLE_MAX_ROWS) {
         return EXECUTE_TABLE_FULL;
     }
+    
     Row *rowToInsert = &(statement->rowToInsert);
     Cursor *cursor = CreateTableEndCursor(table);
     SerializeRow(rowToInsert, GetCursorValue(cursor));
     table->rowNums += 1;
+    FreeCursor(&cursor);
+
     return EXECUTE_SUCCESS;
 }
 
