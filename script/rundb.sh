@@ -6,4 +6,5 @@ cd $baseDir
 make
 
 db=LiteDB
-./bin/$db
+rm test.db
+./bin/$db test.db
